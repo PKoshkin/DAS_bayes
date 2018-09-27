@@ -12,29 +12,37 @@ def pb(params, model):
     return np.full([k_b], 1.0 / k_b), np.arange(params["bmin"], params["bmax"] + 1)
 
 
-def cartesian_product(x, y, z):
-    a, b, c = np.meshgrid(x, y, z)
-    a = np.reshape(a, [-1])
-    b = np.reshape(b, [-1])
-    c = np.reshape(c, [-1])
-    return np.dstack((a, b, c)).reshape(-1, 3)
+def cartesian_product(*arrays):
+    mesh = np.meshgrid(*arrays)
+    mesh = tuple(map(lambda tensor: np.reshape(tensor, [-1]), mesh))
+    return np.dstack(mesh).reshape(-1, len(arrays))
 
 
 def pc(params, model):
     a_range = np.arange(params["amin"], params["amax"] + 1)
     b_range = np.arange(params["bmin"], params["bmax"] + 1)
     c_range = np.arange(0, params["bmax"] + params["amax"] + 1)
+    cartesian = cartesian_product(a_range, b_range, c_range)
 
-    result = []
-    for c in c_range:
-        abt = cartesian_product(a_range, b_range, np.arange(c))
-        a = abt[:, 0]
-        b = abt[:, 1]
-        t = abt[:, 2]
-        mult_1 = st.binom.pmf(t, a, params["p1"])
-        mult_2 = st.binom.pmf(c - t, b, params["p2"])
-        result.append(np.sum(mult_1 * mult_2))
-    return np.array(result), c_range
+    def is_good_row(row):
+        return row[-1] <= row[0]
+
+    bools = np.apply_along_axis(is_good_row, 1, cartesian)
+    cartesian = cartesian[bools]
+    bools = np.apply_along_axis(is_good_row, 1, cartesian)
+    c = np.reshape(
+        np.repeat(np.reshape(c_range, [-1, 1]), np.size(cartesian[:, 0:1]), axis=1),
+        (len(c_range),) + np.shape(cartesian[:, 0:1])
+    )
+    cartesian = np.repeat(np.reshape(cartesian, (1,) + np.shape(cartesian)), len(c_range), axis=0)
+    pmf_params = np.concatenate([cartesian, c], axis=-1)
+    a = pmf_params[:, :, 0]
+    b = pmf_params[:, :, 1]
+    t = pmf_params[:, :, 2]
+    c = pmf_params[:, :, 3]
+    mult_1 = st.binom.pmf(t, a, params["p1"])
+    mult_2 = st.binom.pmf(c - t, b, params["p2"])
+    return np.sum(mult_1 * mult_2, axis=1), c_range
 
 
 def main():
