@@ -12,8 +12,7 @@ var_number = 3
 ff = list()
 ff.append(['pa', 'pb', 'pc', 'pd', 'pc_a', 'pc_b', 'pc_d', 'pc_ab', 'pc_abd'])  # variant 1
 ff.append(['pa', 'pb', 'pc', 'pd', 'pc_a', 'pc_b', 'pb_a', 'pb_d', 'pb_ad'])    # variant 2
-#ff.append(['pa', 'pb', 'pc', 'pd', 'pb_d', 'pb_ad'])                            # variant 3
-ff.append(['pa', 'pb', 'pc', 'pb_d'])#, 'pc', 'pd', 'pb_d', 'pb_ad'])                            # variant 3
+ff.append(['pa', 'pb', 'pc', 'pd', 'pb_d', 'pb_ad'])                            # variant 3
 ff.append(['generate'])                                                         # variant 3
 
 

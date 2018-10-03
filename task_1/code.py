@@ -2,6 +2,14 @@ import numpy as np
 import scipy.stats as st
 
 
+def expand_last(tensor, times):
+    return np.repeat(np.reshape(tensor, np.shape(tensor) + (1, )), times, axis=-1)
+
+
+def expand_first(tensor, times):
+    return np.repeat(np.reshape(tensor, (1, ) + np.shape(tensor)), times, axis=0)
+
+
 def pa(params, model):
     k_a = params["amax"] - params["amin"] + 1
     return np.full([k_a], 1.0 / k_a), np.arange(params["amin"], params["amax"] + 1)
@@ -13,9 +21,12 @@ def pb(params, model):
 
 
 def cartesian_product(*arrays):
+    arrays = list(arrays)
+    arrays[0], arrays[1] = arrays[1], arrays[0]
     mesh = np.meshgrid(*arrays)
-    mesh = tuple(map(lambda tensor: np.reshape(tensor, [-1]), mesh))
-    return np.dstack(mesh).reshape(-1, len(arrays))
+    result = list(map(lambda tensor: np.reshape(tensor, [-1]), mesh))
+    result[0], result[1] = result[1], result[0]
+    return tuple(result)
 
 
 def pc(params, model):
@@ -24,24 +35,22 @@ def pc(params, model):
     c_max = params["bmax"] + params["amax"]
     c_range = np.arange(0, c_max + 1)
     if model == 3:
-        a_t_cartesian = cartesian_product(a_range, c_range)
-        mult_1 = st.binom.pmf(a_t_cartesian[:, 1], a_t_cartesian[:, 0], params["p1"])
-        b_t_cartesian = cartesian_product(b_range, np.arange(c_max, -1, -1))
-        mult_2 = st.binom.pmf(b_t_cartesian[:, 1], b_t_cartesian[:, 0], params["p2"])
+        a, t = cartesian_product(a_range, c_range)
+        mult_1 = st.binom.pmf(t, a, params["p1"])
+        mult_1 = np.reshape(mult_1, [len(a_range), len(c_range)])
+        mult_1 = np.sum(mult_1, axis=0)
 
-        mult_1 = np.reshape(mult_1, [len(c_range), len(a_range)])
-        mult_2 = np.reshape(mult_2, [len(c_range), len(b_range)])
-        mult_1 = np.sum(mult_1, axis=1)
-        mult_2 = np.sum(mult_2, axis=1)
+        b, c_t = cartesian_product(b_range, np.arange(c_max, -1, -1))
+        mult_2 = st.binom.pmf(c_t, b, params["p2"])
+        mult_2 = np.reshape(mult_2, [len(b_range), len(c_range)])
+        mult_2 = np.sum(mult_2, axis=0)
+
         probs = np.cumsum(mult_1 * mult_2)
         return np.clip(probs, 1e-100, 1) / len(a_range) / len(b_range), c_range
     elif model == 4:
-        a_b_c_cartesian = cartesian_product(a_range, b_range, c_range)
-        a = a_b_c_cartesian[:, 0]
-        b = a_b_c_cartesian[:, 1]
-        c = a_b_c_cartesian[:, 2]
+        a, b, c = cartesian_product(a_range, b_range, c_range)
         pmf = st.poisson.pmf(c, a * params["p1"] + b * params["p2"])
-        pmf = np.reshape(pmf, [len(b_range), len(a_range), len(c_range)])
+        pmf = np.reshape(pmf, [len(a_range), len(b_range), len(c_range)])
 
         probs = np.sum(pmf, axis=(0, 1))
         return probs / len(a_range) / len(b_range), c_range
@@ -65,62 +74,85 @@ def pb_d(d, params, model):
     c_max = params["bmax"] + params["amax"]
     c_range = np.arange(0, c_max + 1)
 
-    start_d_shape = np.shape(d)
-    d = np.reshape(d, [-1])
-    d_c_cartesian = cartesian_product(d, c_range)
-    raw_d_probs = st.binom.pmf(d_c_cartesian[:, 0], d_c_cartesian[:, 1], params["p3"])
-    raw_d_probs = np.reshape(raw_d_probs, [len(c_range), len(d)])
-    d_probs = np.repeat(np.reshape(raw_d_probs, [len(c_range), len(d), 1]), len(b_range), axis=-1)
-    d_probs = np.transpose(d_probs, [0, 2, 1])
+    d_vals = np.reshape(d, [-1])
+
+    d_c_cartesian = cartesian_product(d_vals, c_range)
+    raw_d_probs = st.binom.pmf(d_c_cartesian[0], d_c_cartesian[1], params["p3"])
+    raw_d_probs = np.reshape(raw_d_probs, [len(d_vals), len(c_range)])
+    d_probs = expand_last(raw_d_probs, len(b_range))
+    d_probs = np.transpose(d_probs, [2, 1, 0])  # shape: (b, c, d)
 
     if model == 3:
-        a_t_cartesian = cartesian_product(a_range, c_range)
-        mult_1 = st.binom.pmf(a_t_cartesian[:, 1], a_t_cartesian[:, 0], params["p1"])
-        mult_1 = np.reshape(mult_1, [len(c_range), len(a_range)])
-        mult_1 = np.sum(mult_1, axis=1)
+        a, t = cartesian_product(a_range, c_range)
+        mult_1 = st.binom.pmf(t, a, params["p1"])
+        mult_1 = np.reshape(mult_1, [len(a_range), len(c_range)])
+        mult_1 = np.sum(mult_1, axis=0)
 
-        b_t_cartesian = cartesian_product(b_range, np.arange(c_max, -1, -1))
-        mult_2 = st.binom.pmf(b_t_cartesian[:, 1], b_t_cartesian[:, 0], params["p2"])
-        mult_2 = np.reshape(mult_2, [len(c_range), len(b_range)])
+        b, c_t = cartesian_product(b_range, np.arange(c_max, -1, -1))
+        mult_2 = st.binom.pmf(c_t, b, params["p2"])
+        mult_2 = np.reshape(mult_2, [len(b_range), len(c_range)])
 
-        mult_1 = np.repeat(np.reshape(mult_1, [-1, 1]), len(b_range), axis=1)
-        mult_2 = np.cumsum(mult_1 * mult_2, axis=0)
+        mult_1 = expand_first(mult_1, len(b_range))
+        mult_2 = np.cumsum(mult_1 * mult_2, axis=1)
 
     elif model == 4:
-        a_c_b_cartesian = cartesian_product(a_range, c_range, b_range)
-        a = a_c_b_cartesian[:, 0]
-        c = a_c_b_cartesian[:, 1]
-        b = a_c_b_cartesian[:, 2]
+        a, c, b = cartesian_product(a_range, c_range, b_range)
         pmf = st.poisson.pmf(c, a * params["p1"] + b * params["p2"])
-        pmf = np.reshape(pmf, [len(c_range), len(a_range), len(b_range)])
+        pmf = np.reshape(pmf, [len(a_range), len(c_range), len(b_range)])
 
-        mult_2 = np.sum(pmf, axis=1)
+        mult_2 = np.transpose(np.sum(pmf, axis=0), [1, 0])
     else:
         raise ValueError("Unsupported model {}".format(model))
 
-    mult_2 = np.repeat(np.reshape(mult_2, np.shape(mult_2) + (1,)), len(d), axis=-1)
-    b_probs = np.sum(mult_2 * d_probs, axis=0)
+    mult_2 = expand_last(mult_2, len(d_vals))  # shape: (b, c, d)
+    b_probs = np.sum(mult_2 * d_probs, axis=1)  # shape: (b, d)
     c_probs, c_vals = pc(params, model)
-    c_probs = np.repeat(np.reshape(c_probs, [-1, 1]), len(d), axis=1)
-    denominator = np.sum(c_probs * raw_d_probs, axis=0)
+    c_probs = expand_first(c_probs, len(d_vals))  # shape: (d, c)
+    denominator = np.sum(c_probs * raw_d_probs, axis=1)  # shape: (d, )
+    denominator = expand_first(denominator, len(b_range))  # shape: (b, d)
 
-    b_probs = b_probs / denominator
+    b_probs = b_probs / denominator  # shape: (b, d)
 
-    b_probs = np.reshape(b_probs, np.shape(b_probs)[:-1] + start_d_shape)
+    b_probs = np.reshape(b_probs, np.shape(b_probs)[:-1] + np.shape(d))
     b_probs = np.prod(b_probs, axis=-1)
-    return b_probs, b_range
+    return b_probs / len(a_range) / len(b_range), b_range
 
 
 def pb_ad(a, d, params, model):
-    a_range = np.arange(params["amin"], params["amax"] + 1)
     b_range = np.arange(params["bmin"], params["bmax"] + 1)
     c_max = params["bmax"] + params["amax"]
     c_range = np.arange(0, c_max + 1)
+    a_vals = a
+    d_vals = np.reshape(d, [-1])
     if model == 3:
-        a_b_c_cartesian = cartesian_product(a_range, b_range, c_range)
-        a = a_b_c_cartesian[:, 0]
-        c = a_b_c_cartesian[:, 1]
-        b = a_b_c_cartesian[:, 2]
+        a, b, t = cartesian_product(a_vals, b_range, c_range)
+        mult_1 = st.binom.pmf(t, a, params["p1"])
+        mult_1 = np.reshape(mult_1, [len(a_vals), len(b_range), len(c_range)])
+        mult_2 = st.binom.pmf(np.flip(t, axis=0), np.flip(b, axis=0), params["p2"])
+        mult_2 = np.reshape(mult_2, [len(a_vals), len(b_range), len(c_range)])
+        pc_ab = np.cumsum(mult_1 * mult_2, axis=-1)  # shape: (a, b, c)
+    elif model == 4:
+        a, b, c = cartesian_product(a_vals, b_range, c_range)
+        pc_ab = st.poisson.pmf(c, a * params["p1"] + b * params["p2"])
+        pc_ab = np.reshape(pc_ab, [len(a_vals), len(b_range), len(c_range)])  # shape: (a, b, c)
+    else:
+        raise ValueError("Unsupported model {}".format(model))
+    c_d = cartesian_product(c_range, d_vals)
+    pd_c = st.binom.pmf(c_d[0], c_d[1], params["p3"])
+    pd_c = np.reshape(pd_c, [len(c_range), len(d_vals)])
+    pd_c = expand_first(pd_c, len(b_range))
+    pd_c = expand_first(pd_c, len(a_vals))  # shape: (a, b, c, d)
+
+    pc_ab = expand_last(pc_ab, len(d_vals))  # shape: (a, b, c, d)
+
+    numerator = np.sum(pd_c * pc_ab, axis=2)  # shape: (a, b, d)
+    denominator = np.sum(numerator, axis=1)  # shape: (a, d)
+    denominator = np.transpose(expand_last(denominator, len(b_range)), [0, 2, 1])  # shape: (a, b, d)
+
+    result = numerator / np.clip(denominator, 1e-100, 1)  # shape: (a, b, d)
+    result = np.transpose(result, [1, 0, 2])  # shape: (b, a, d)
+    result = np.reshape(result, np.shape(result)[:-1] + np.shape(d))
+    return np.prod(result, axis=-1), b_range
 
 
 def main():
@@ -132,4 +164,4 @@ def main():
     print(pc(params, model)[0])
 
 
-main()
+# main()
