@@ -128,7 +128,6 @@ def run_tests():
         test_distribution(f, models[0], args_long[f], args_short[f], size_long[f], size_short[f])
         test_distribution(f, models[1], args_long[f], args_short[f], size_long[f], size_short[f])
 
-    return
     if var_number == 3:
         for f in ff[-1]:
             test_generate(f, models[0], args_long[f], args_short[f], size_long[f], size_short[f])

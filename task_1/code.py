@@ -155,13 +155,14 @@ def pb_ad(a, d, params, model):
     return np.prod(result, axis=-1), b_range
 
 
-def main():
-    params = {
-        'amin': 5, 'amax': 9, 'bmin': 50, 'bmax': 60,
-        'p1': 0.1, 'p2': 0.01, 'p3': 0.3
-    }
-    model = 3
-    print(pc(params, model)[0])
-
-
-# main()
+def generate(N, a, b, params, model):
+    a_vals = a
+    b_vals = b
+    a, b = cartesian_product(a_vals, b_vals)
+    if model == 3:
+        c = st.binom.rvs(a, params["p1"], size=(N, len(a))) + st.binom.rvs(b, params["p2"], size=(N, len(a)))  # shape: (N, a * b)
+        c = np.reshape(c, [N, len(a_vals), len(b_vals)])
+    elif model == 4:
+        c = st.poisson.rvs(a * params["p1"] + b * params["p2"], size=(N, len(a)))
+        c = np.reshape(c, [N, len(a_vals), len(b_vals)])
+    return st.binom.rvs(c, params["p3"])
