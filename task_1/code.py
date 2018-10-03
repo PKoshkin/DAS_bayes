@@ -61,8 +61,9 @@ def pc(params, model):
 def pd(params, model):
     c_probs, c_vals = pc(params, model)
     d_range = np.arange(0, 2 * (params["amax"] + params["bmax"]) + 1)
+
     probs = np.array([
-        np.sum(st.binom.pmf(d, c_vals, params["p3"]) * c_probs)
+        np.sum(st.binom.pmf(d - c_vals, c_vals, params["p3"]) * c_probs)
         for d in d_range
     ])
     return probs, d_range
@@ -76,8 +77,8 @@ def pb_d(d, params, model):
 
     d_vals = np.reshape(d, [-1])
 
-    d_c_cartesian = cartesian_product(d_vals, c_range)
-    raw_d_probs = st.binom.pmf(d_c_cartesian[0], d_c_cartesian[1], params["p3"])
+    d_c = cartesian_product(d_vals, c_range)
+    raw_d_probs = st.binom.pmf(d_c[0] - d_c[1], d_c[1], params["p3"])
     raw_d_probs = np.reshape(raw_d_probs, [len(d_vals), len(c_range)])
     d_probs = expand_last(raw_d_probs, len(b_range))
     d_probs = np.transpose(d_probs, [2, 1, 0])  # shape: (b, c, d)
@@ -138,7 +139,7 @@ def pb_ad(a, d, params, model):
     else:
         raise ValueError("Unsupported model {}".format(model))
     c_d = cartesian_product(c_range, d_vals)
-    pd_c = st.binom.pmf(c_d[0], c_d[1], params["p3"])
+    pd_c = st.binom.pmf(c_d[0] - c_d[1], c_d[1], params["p3"])
     pd_c = np.reshape(pd_c, [len(c_range), len(d_vals)])
     pd_c = expand_first(pd_c, len(b_range))
     pd_c = expand_first(pd_c, len(a_vals))  # shape: (a, b, c, d)
@@ -165,4 +166,4 @@ def generate(N, a, b, params, model):
     elif model == 4:
         c = st.poisson.rvs(a * params["p1"] + b * params["p2"], size=(N, len(a)))
         c = np.reshape(c, [N, len(a_vals), len(b_vals)])
-    return st.binom.rvs(c, params["p3"])
+    return c + st.binom.rvs(c, params["p3"])
