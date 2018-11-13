@@ -1,3 +1,10 @@
+import numpy as np
+import scipy.stats as st
+
+
+def repeat_last_dim(tensor, times):
+    return tensor.reshpe(tensor.shape + (1,)).repeat(time, axis=-1)
+
 
 def calculate_log_probability(X, F, B, s):
     """
@@ -21,7 +28,22 @@ def calculate_log_probability(X, F, B, s):
         ll[dh,dw,k] - log-likelihood of observing image X_k given
         that the villain's face F is located at displacement (dh, dw)
     """
-    pass
+    H = X.shape[0]
+    W = X.shape[1]
+    K = X.shape[2]
+    h = F.shape[0]
+    w = F.shape[1]
+
+    background_logprob = -(X - repeat_last_dim(B, K)) ** 2 - np.log(2 * np.pi * s ** 2)  # shape: (H, W, K)
+    full_backgroundg_logprob = np.sum(background_logprob, axis=(0, 1))  # shape: (K)
+    result_logprob = np.zeros((H - h + 1, W - w + 1, K))  # shape: (H-h+1, W-w+1, K)
+    for d_h in range(H - h + 1):
+        for d_w in range(W - w + 1):
+            indices = slice(d_h, d_h + h), slice(d_w, d_w + w)
+            face_logprob = -np.sum((X[indices] - repeat_last_dim(F, K)) ** 2, axis=(0, 1))  # shape: (K,)
+            negative_background_logprob = np.sum(backgroun_logprob[indices], axis=(0, 1))  # shape: (K,)
+            result_logprob[d_h, d_w, :] = face_logprob - negative_background_logprob + full_background_logprob
+    return result_logprob / (2 * s ** 2) - (W - w + 1) * (H - h + 1) * np.log(2 * np.pi * s) / 2
 
 
 def calculate_lower_bound(X, F, B, s, A, q, use_MAP=False):
