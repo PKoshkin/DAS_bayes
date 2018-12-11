@@ -35,18 +35,21 @@ def pc(params, model):
     c_max = params["bmax"] + params["amax"]
     c_range = np.arange(0, c_max + 1)
     if model == 3:
-        a, t = cartesian_product(a_range, c_range)
-        mult_1 = st.binom.pmf(t, a, params["p1"])
+        a, c = cartesian_product(a_range, c_range)
+        mult_1 = st.binom.pmf(c, a, params["p1"])
         mult_1 = np.reshape(mult_1, [len(a_range), len(c_range)])
         mult_1 = np.sum(mult_1, axis=0)
 
-        b, c_t = cartesian_product(b_range, np.arange(c_max, -1, -1))
-        mult_2 = st.binom.pmf(c_t, b, params["p2"])
+        b, c = cartesian_product(b_range, c_range)
+        mult_2 = st.binom.pmf(c, b, params["p2"])
         mult_2 = np.reshape(mult_2, [len(b_range), len(c_range)])
         mult_2 = np.sum(mult_2, axis=0)
 
-        probs = np.cumsum(mult_1 * mult_2)
-        return np.clip(probs, 1e-100, 1) / len(a_range) / len(b_range), c_range
+        probs = np.array([
+            np.sum(mult_1[:t] * np.flip(mult_2[:t], axis=0))
+            for t in c_range + 1
+        ])
+        return probs / len(a_range) / len(b_range), c_range
     elif model == 4:
         a, b, c = cartesian_product(a_range, b_range, c_range)
         pmf = st.poisson.pmf(c, a * params["p1"] + b * params["p2"])
@@ -84,24 +87,28 @@ def pb_d(d, params, model):
     d_probs = np.transpose(d_probs, [2, 1, 0])  # shape: (b, c, d)
 
     if model == 3:
-        a, t = cartesian_product(a_range, c_range)
-        mult_1 = st.binom.pmf(t, a, params["p1"])
+        a, c = cartesian_product(a_range, c_range)
+        mult_1 = st.binom.pmf(c, a, params["p1"])
         mult_1 = np.reshape(mult_1, [len(a_range), len(c_range)])
-        mult_1 = np.sum(mult_1, axis=0)
+        mult_1 = np.sum(mult_1, axis=0)  # shape: (c, )
+        mult_1 = expand_first(mult_1, len(b_range))  # shape: (c, b)
 
-        b, c_t = cartesian_product(b_range, np.arange(c_max, -1, -1))
-        mult_2 = st.binom.pmf(c_t, b, params["p2"])
+        b, c = cartesian_product(b_range, c_range)
+        mult_2 = st.binom.pmf(c, b, params["p2"])
         mult_2 = np.reshape(mult_2, [len(b_range), len(c_range)])
 
-        mult_1 = expand_first(mult_1, len(b_range))
-        mult_2 = np.cumsum(mult_1 * mult_2, axis=1)
+        mult_2 = np.array([
+            np.sum(mult_1[:, :t] * np.flip(mult_2[:, :t], axis=1), axis=1)
+            for t in c_range + 1
+        ])  # shape: (c, b)
+        mult_2 = np.transpose(mult_2, [1, 0])
 
     elif model == 4:
         a, c, b = cartesian_product(a_range, c_range, b_range)
         pmf = st.poisson.pmf(c, a * params["p1"] + b * params["p2"])
         pmf = np.reshape(pmf, [len(a_range), len(c_range), len(b_range)])
 
-        mult_2 = np.transpose(np.sum(pmf, axis=0), [1, 0])
+        mult_2 = np.transpose(np.sum(pmf, axis=0), [1, 0])  # shape: (b, c)
     else:
         raise ValueError("Unsupported model {}".format(model))
 
