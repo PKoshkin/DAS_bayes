@@ -33,7 +33,7 @@ def pc(params, model):
     a_range = np.arange(params["amin"], params["amax"] + 1)
     b_range = np.arange(params["bmin"], params["bmax"] + 1)
     c_max = params["bmax"] + params["amax"]
-    c_range = np.arange(0, c_max + 1)
+    c_range = np.arange(c_max + 1)
 
     a_size, b_size, c_size = len(a_range), len(b_range), len(c_range)
 
@@ -62,7 +62,7 @@ def pc(params, model):
 
 def pd(params, model):
     c_probs, c_vals = pc(params, model)
-    d_range = np.arange(0, 2 * (params["amax"] + params["bmax"]) + 1)
+    d_range = np.arange(2 * (params["amax"] + params["bmax"]) + 1)
 
     probs = np.array([
         np.sum(st.binom.pmf(d - c_vals, c_vals, params["p3"]) * c_probs)
@@ -71,13 +71,46 @@ def pd(params, model):
     return probs, d_range
 
 
+def pb_d_stupid(d, params, model):
+    a_range = np.arange(params["amin"], params["amax"] + 1)
+    b_range = np.arange(params["bmin"], params["bmax"] + 1)
+    c_max = params["bmax"] + params["amax"]
+    c_range = np.arange(c_max + 1)
+
+    flat_d = np.ravel(d)
+
+    a_size, b_size, c_size, d_size = len(a_range), len(b_range), len(c_range), len(flat_d)
+    k_d, N = d.shape
+
+    print(a_size, b_size, c_size, k_d, N)
+
+    tensor = np.array([[[[[
+                        st.poisson.pmf(c, a * params["p1"] + b * params["p2"]) * st.binom.pmf(d_elem - c, c, params["p3"])
+                        for d_elem in d_list
+                    ]
+                    for d_list in d
+                ]
+                for c in c_range
+            ]
+            for b in b_range
+        ]
+        for a in a_range
+    ])
+
+    probs = tensor.sum(axis=2).prod(axis=-1).sum(axis=0)  # shape: (b, k_d)
+
+    denum = probs.sum(axis=0)
+
+    return probs / denum, b_range
+
+
 def pb_d(d, params, model):
     a_range = np.arange(params["amin"], params["amax"] + 1)
     b_range = np.arange(params["bmin"], params["bmax"] + 1)
     c_max = params["bmax"] + params["amax"]
-    c_range = np.arange(0, c_max + 1)
+    c_range = np.arange(c_max + 1)
 
-    flat_d = np.reshape(d, [-1])
+    flat_d = np.ravel(d)
 
     a_size, b_size, c_size, d_size = len(a_range), len(b_range), len(c_range), len(flat_d)
     k_d, N = d.shape
@@ -85,30 +118,29 @@ def pb_d(d, params, model):
     if model == 3:
         a, b, c = cartesian_product(a_range, b_range, c_range)
         pmf_1 = st.poisson.pmf(c, a * params["p1"] + b * params["p2"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
-        mult_1 = pmf_1.sum(axis=0)  # shape: (b, c)
     elif model == 4:
         a, b, c = cartesian_product(a_range, b_range, c_range)
         pmf_1 = st.poisson.pmf(c, a * params["p1"] + b * params["p2"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
-        mult_1 = pmf_1.sum(axis=0)  # shape: (b, c)
     else:
         raise ValueError("Unsupported model {}".format(model))
 
-    mult_1 = expand_last(mult_1, d_size)  # shape: (b, c, d)
+    pmf_1 = expand_last(pmf_1, d_size)  # shape: (a, b, c, d)
 
     c, d = cartesian_product(c_range, flat_d)
-    mult_2 = st.binom.pmf(d - c, c, params["p3"]).reshape([c_size, d_size])  # shape: (c, d)
-    mult_2 = expand_first(mult_2, b_size)  # shape: (b, c, d)
+    pmf_2 = st.binom.pmf(d - c, c, params["p3"]).reshape([c_size, d_size])  # shape: (c, d)
+    pmf_2 = expand_first(pmf_2, b_size)  # shape: (b, c, d)
+    pmf_2 = expand_first(pmf_2, a_size)  # shape: (a, b, c, d)
 
-    probs = np.sum(mult_1 * mult_2, axis=1)  # shape: (b, d)
-    probs = probs.reshape([b_size, k_d, N]).prod(axis=-1)  # shape: (b, k_d)
+    probs = (pmf_1 * pmf_2).reshape([a_size, b_size, c_size, k_d, N])  # shape: (a, b, c, k_d, N)
+    probs = probs.sum(axis=2).prod(axis=-1).sum(axis=0)   # shape: (b, k_d)
 
-    d_probs, _ = pd(params, model)  # shape: (d_distr,)
-    d_probs = d_probs[flat_d].reshape([k_d, N])  # shape: (k_d, N)
-
-    d_probs = expand_first(d_probs, b_size).prod(axis=-1)  # shape: (b, k_d)
-
-    probs /= d_probs
     denum = probs.sum(axis=0)
+
+    print("3" * 100)
+    print(probs)
+    print("3" * 100)
+    print(probs / denum)
+    print("3" * 100)
 
     return probs / denum, b_range
 
@@ -116,7 +148,7 @@ def pb_d(d, params, model):
 def pb_ad(a, d, params, model):
     b_range = np.arange(params["bmin"], params["bmax"] + 1)
     c_max = params["bmax"] + params["amax"]
-    c_range = np.arange(0, c_max + 1)
+    c_range = np.arange(c_max + 1)
     a_vals = a
     d_vals = np.reshape(d, [-1])
     if model == 3:
