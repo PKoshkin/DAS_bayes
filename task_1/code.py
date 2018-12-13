@@ -71,39 +71,6 @@ def pd(params, model):
     return probs, d_range
 
 
-def pb_d_stupid(d, params, model):
-    a_range = np.arange(params["amin"], params["amax"] + 1)
-    b_range = np.arange(params["bmin"], params["bmax"] + 1)
-    c_max = params["bmax"] + params["amax"]
-    c_range = np.arange(c_max + 1)
-
-    flat_d = np.ravel(d)
-
-    a_size, b_size, c_size, d_size = len(a_range), len(b_range), len(c_range), len(flat_d)
-    k_d, N = d.shape
-
-    print(a_size, b_size, c_size, k_d, N)
-
-    tensor = np.array([[[[[
-                        st.poisson.pmf(c, a * params["p1"] + b * params["p2"]) * st.binom.pmf(d_elem - c, c, params["p3"])
-                        for d_elem in d_list
-                    ]
-                    for d_list in d
-                ]
-                for c in c_range
-            ]
-            for b in b_range
-        ]
-        for a in a_range
-    ])
-
-    probs = tensor.sum(axis=2).prod(axis=-1).sum(axis=0)  # shape: (b, k_d)
-
-    denum = probs.sum(axis=0)
-
-    return probs / denum, b_range
-
-
 def pb_d(d, params, model):
     a_range = np.arange(params["amin"], params["amax"] + 1)
     b_range = np.arange(params["bmin"], params["bmax"] + 1)
@@ -116,25 +83,24 @@ def pb_d(d, params, model):
     k_d, N = d.shape
 
     if model == 3:
-        a, b, t = cartesian_product(a_range, b_range, c_range)
-        mult_1 = st.binom.pmf(t, a, params["p1"]).reshape([a_size, b_size, c_size])
-        mult_2 = st.binom.pmf(np.flip(t, axis=0), np.flip(b, axis=0), params["p2"]).reshape([a_size, b_size, c_size])
-        pmf_1 = np.cumsum(mult_1 * mult_2, axis=-1)  # shape: (a, b, c)
-
         a, c = cartesian_product(a_range, c_range)
         mult_1 = st.binom.pmf(c, a, params["p1"]).reshape([a_size, c_size])  # shape: (a, c)
+        mult_1 = mult_1.reshape([a_size, 1, c_size]).repeat(b_size, axis=1)  #shape: (a, b, c)
 
         b, c = cartesian_product(b_range, c_range)
         mult_2 = st.binom.pmf(c, b, params["p2"]).reshape([b_size, c_size])  # shape: (b, c)
+        mult_2 = expand_first(mult_2, a_size)  # shape: (a, b, c)
 
-        pmf_1 = np.array([[[
-                    np.sum(mult_1[a, :t] * np.flip(mult_2[b, :t], axis=0))
-                    for t in c_range + 1
-                ]
-                for b in range(b_size)
-            ]
-            for a in range(a_size)
-        ])  # shape: (a, b, c)
+        #a, b, c = cartesian_product(a_range, b_range, c_range)
+        #mult_1 = st.binom.pmf(c, a, params["p1"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
+        #mult_2 = st.binom.pmf(c, b, params["p2"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
+
+        pmf_1 = np.array([
+            np.sum(mult_1[:, :, :t] * np.flip(mult_2[:, :, :t], axis=-1), axis=-1)
+            for t in c_range + 1
+        ])  # shape: (c, a, b)
+        pmf_1 = pmf_1.transpose([1, 2, 0])
+
     elif model == 4:
         a, b, c = cartesian_product(a_range, b_range, c_range)
         pmf_1 = st.poisson.pmf(c, a * params["p1"] + b * params["p2"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
@@ -153,11 +119,9 @@ def pb_d(d, params, model):
 
     denum = probs.sum(axis=0)
 
-    print("3" * 100)
-    print(probs)
-    print("3" * 100)
-    print(probs / denum)
-    print("3" * 100)
+    #print("3" * 100)
+    #print(probs / denum)
+    #print("3" * 100)
 
     return probs / denum, b_range
 
