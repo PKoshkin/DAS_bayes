@@ -83,24 +83,18 @@ def pb_d(d, params, model):
     k_d, N = d.shape
 
     if model == 3:
-        a, c = cartesian_product(a_range, c_range)
-        mult_1 = st.binom.pmf(c, a, params["p1"]).reshape([a_size, c_size])  # shape: (a, c)
-        mult_1 = mult_1.reshape([a_size, 1, c_size]).repeat(b_size, axis=1)  #shape: (a, b, c)
+        x, y = cartesian_product(a_range, np.arange(params["amax"] + 1))
+        mult_1 = st.binom.pmf(y, x, params["p1"]).reshape([a_size, 1, -1]).repeat(b_size, axis=1)
+        mult_1 = mult_1.reshape([-1, mult_1.shape[-1]])
 
-        b, c = cartesian_product(b_range, c_range)
-        mult_2 = st.binom.pmf(c, b, params["p2"]).reshape([b_size, c_size])  # shape: (b, c)
-        mult_2 = expand_first(mult_2, a_size)  # shape: (a, b, c)
-
-        #a, b, c = cartesian_product(a_range, b_range, c_range)
-        #mult_1 = st.binom.pmf(c, a, params["p1"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
-        #mult_2 = st.binom.pmf(c, b, params["p2"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
+        x, y = cartesian_product(b_range, np.arange(params["bmax"] + 1))
+        mult_2 = st.binom.pmf(y, x, params["p2"]).reshape([1, b_size, -1]).repeat(a_size, axis=0)
+        mult_2 = mult_2.reshape([-1, mult_2.shape[-1]])
 
         pmf_1 = np.array([
-            np.sum(mult_1[:, :, :t] * np.flip(mult_2[:, :, :t], axis=-1), axis=-1)
-            for t in c_range + 1
-        ])  # shape: (c, a, b)
-        pmf_1 = pmf_1.transpose([1, 2, 0])
-
+            np.convolve(mult_1[i], mult_2[i])
+            for i in range(a_size * b_size)
+        ]).reshape([a_size, b_size, -1])
     elif model == 4:
         a, b, c = cartesian_product(a_range, b_range, c_range)
         pmf_1 = st.poisson.pmf(c, a * params["p1"] + b * params["p2"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
@@ -116,13 +110,7 @@ def pb_d(d, params, model):
 
     probs = (pmf_1 * pmf_2).reshape([a_size, b_size, c_size, k_d, N])  # shape: (a, b, c, k_d, N)
     probs = probs.sum(axis=2).prod(axis=-1).sum(axis=0)   # shape: (b, k_d)
-
     denum = probs.sum(axis=0)
-
-    #print("3" * 100)
-    #print(probs / denum)
-    #print("3" * 100)
-
     return probs / denum, b_range
 
 
