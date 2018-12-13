@@ -116,8 +116,25 @@ def pb_d(d, params, model):
     k_d, N = d.shape
 
     if model == 3:
-        a, b, c = cartesian_product(a_range, b_range, c_range)
-        pmf_1 = st.poisson.pmf(c, a * params["p1"] + b * params["p2"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
+        a, b, t = cartesian_product(a_range, b_range, c_range)
+        mult_1 = st.binom.pmf(t, a, params["p1"]).reshape([a_size, b_size, c_size])
+        mult_2 = st.binom.pmf(np.flip(t, axis=0), np.flip(b, axis=0), params["p2"]).reshape([a_size, b_size, c_size])
+        pmf_1 = np.cumsum(mult_1 * mult_2, axis=-1)  # shape: (a, b, c)
+
+        a, c = cartesian_product(a_range, c_range)
+        mult_1 = st.binom.pmf(c, a, params["p1"]).reshape([a_size, c_size])  # shape: (a, c)
+
+        b, c = cartesian_product(b_range, c_range)
+        mult_2 = st.binom.pmf(c, b, params["p2"]).reshape([b_size, c_size])  # shape: (b, c)
+
+        pmf_1 = np.array([[[
+                    np.sum(mult_1[a, :t] * np.flip(mult_2[b, :t], axis=0))
+                    for t in c_range + 1
+                ]
+                for b in range(b_size)
+            ]
+            for a in range(a_size)
+        ])  # shape: (a, b, c)
     elif model == 4:
         a, b, c = cartesian_product(a_range, b_range, c_range)
         pmf_1 = st.poisson.pmf(c, a * params["p1"] + b * params["p2"]).reshape([a_size, b_size, c_size])  # shape: (a, b, c)
