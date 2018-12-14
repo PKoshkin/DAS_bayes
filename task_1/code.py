@@ -74,9 +74,9 @@ def pb_d(d, params, model):
     a_range = np.arange(params["amin"], params["amax"] + 1)
     b_range = np.arange(params["bmin"], params["bmax"] + 1)
     flat_d = d.reshape([-1])
-    probs = pb_ad_numerator(a_range, flat_d, params, model)  # shape: (a, b, c, k_d * N)
-    probs = probs.reshape(probs.shape[:-1] + d.shape)
-    probs = probs.sum(axis=2).prod(axis=-1).sum(axis=0)  # shape: (b, k_d)
+    probs = pb_ad_numerator(a_range, flat_d, params, model)  # shape: (a, b, k_d * N)
+    probs = probs.reshape(probs.shape[:-1] + d.shape)  # shape: (a, b, k_d, N)
+    probs = probs.prod(axis=-1).sum(axis=0)  # shape: (b, k_d)
     denum = probs.sum(axis=0)
     return probs / denum, b_range
 
@@ -101,7 +101,7 @@ def pb_ad_numerator(a, d, params, model):
         pmf_1 = np.array([
             np.convolve(mult_1[i], mult_2[i])
             for i in range(a_size * b_size)
-        ]).reshape([a_size, b_size, -1])
+        ]).reshape([a_size, b_size, -1])  # shape: (a, b, c)
         del x, y
     elif model == 4:
         a, b, c = cartesian_product(a_range, b_range, c_range)
@@ -110,22 +110,25 @@ def pb_ad_numerator(a, d, params, model):
     else:
         raise ValueError("Unsupported model {}".format(model))
 
-    pmf_1 = expand_last(pmf_1, d_size)  # shape: (a, b, c, d)
-
     c, d = cartesian_product(c_range, d_range)
     pmf_2 = st.binom.pmf(d - c, c, params["p3"]).reshape([c_size, d_size])  # shape: (c, d)
     pmf_2 = expand_first(pmf_2, b_size)  # shape: (b, c, d)
-    pmf_2 = expand_first(pmf_2, a_size)  # shape: (a, b, c, d)
 
-    return pmf_1 * pmf_2
+    result = np.array([[
+            (pmf_1[a] * pmf_2[:, :, d]).sum(axis=-1)
+            for d in range(d_size)
+        ]
+        for a in range(a_size)
+    ])  # shape: (a, d, b)
+    return result.transpose([0, 2, 1])
 
 
 def pb_ad(a, d, params, model):
     b_range = np.arange(params["bmin"], params["bmax"] + 1)
     flat_d = d.reshape([-1])
-    probs = pb_ad_numerator(a, flat_d, params, model)  # shape: (a, b, c, k_d * N)
-    probs = probs.reshape(probs.shape[:-1] + d.shape)
-    probs = probs.sum(axis=2).prod(axis=-1)  # shape: (a, b, k_d)
+    probs = pb_ad_numerator(a, flat_d, params, model)  # shape: (a, b, k_d * N)
+    probs = probs.reshape(probs.shape[:-1] + d.shape)  # shape: (a, b, k_d, N)
+    probs = probs.prod(axis=-1)  # shape: (a, b, k_d)
     probs = probs.transpose([1, 0, 2])
     denum = probs.sum(axis=0)
     return probs / denum, b_range
